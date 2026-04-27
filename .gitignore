@@ -1,0 +1,26 @@
+# Nix
+.nix/
+.direnv/
+result
+
+# Elixir / Mix
+_build/
+deps/
+*.beam
+
+# Hex
+.hex/
+
+# Generated docs
+doc/
+
+# OS
+.DS_Store
+
+# Editor
+.idea/
+.zed/
+.vscode/
+*.swp
+*.swo
+*~
