@@ -213,7 +213,42 @@ defmodule Mix.Tasks.PhoenixPageMeta.InstallTest do
         }
       )
       |> Igniter.compose_task("phoenix_page_meta.install", [])
-      |> assert_has_warning(&String.contains?(&1, "Could not find `def live_view`"))
+      |> assert_has_warning(&String.contains?(&1, "`def live_view` not found"))
+    end
+  end
+
+  describe "phoenix_page_meta.install — step 4: PageMeta alias in html_helpers" do
+    test "adds `alias TestWeb.PageMeta` inside defp html_helpers" do
+      base_project()
+      |> Igniter.compose_task("phoenix_page_meta.install", [])
+      |> assert_has_patch("lib/test_web.ex", """
+      + |      alias TestWeb.PageMeta
+      """)
+    end
+
+    test "warns when defp html_helpers is missing" do
+      web_module_without_helpers = """
+      defmodule TestWeb do
+        def live_view do
+          quote do
+            use Phoenix.LiveView
+          end
+        end
+
+        defmacro __using__(which) when is_atom(which) do
+          apply(__MODULE__, which, [])
+        end
+      end
+      """
+
+      test_project(
+        files: %{
+          "lib/test_web.ex" => web_module_without_helpers,
+          "lib/test_web/components/layouts/root.html.heex" => @root_heex
+        }
+      )
+      |> Igniter.compose_task("phoenix_page_meta.install", [])
+      |> assert_has_warning(&String.contains?(&1, "`defp html_helpers` not found"))
     end
   end
 
@@ -257,6 +292,7 @@ defmodule Mix.Tasks.PhoenixPageMeta.InstallTest do
         defp html_helpers do
           quote do
             use Phoenix.Component
+            alias TestWeb.PageMeta
           end
         end
 

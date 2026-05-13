@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.2] - 2026-05-13
+
+### Added
+- `mix phoenix_page_meta.install` now also adds `alias <AppWeb>.PageMeta`
+  inside `defp html_helpers` in the web module, so templates and LiveViews
+  can reference `%PageMeta{}` directly without the prefix. Idempotent; warns
+  (does not error) if `defp html_helpers` cannot be found.
+
 ## [0.1.1] - 2026-05-13
 
 ### Added

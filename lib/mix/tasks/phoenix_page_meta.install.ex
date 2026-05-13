@@ -23,7 +23,11 @@ defmodule Mix.Tasks.PhoenixPageMeta.Install.Docs do
        `use Phoenix.LiveView` inside the `def live_view` macro in the main
        web module.
 
-    All three steps are idempotent — re-running the task is safe.
+    4. Adds `alias <AppWeb>.PageMeta` inside the `defp html_helpers` block in
+       the main web module so that templates and LiveViews can reference
+       `%PageMeta{}` directly.
+
+    All four steps are idempotent — re-running the task is safe.
 
     ## Example
 
@@ -64,6 +68,7 @@ if Code.ensure_loaded?(Igniter) do
       |> create_page_meta_module(web_module)
       |> inject_meta_tags_component(heex_path)
       |> wire_live_view(web_module)
+      |> alias_page_meta_in_html_helpers(web_module)
     end
 
     defp root_layout_path(web_module) do
@@ -170,77 +175,35 @@ if Code.ensure_loaded?(Igniter) do
     """
 
     defp wire_live_view(igniter, web_module) do
-      case Igniter.Project.Module.find_and_update_module(igniter, web_module, fn zipper ->
-             patch_live_view(zipper, web_module)
-           end) do
-        {:ok, igniter} ->
-          igniter
-
-        {:error, igniter} ->
-          Igniter.add_warning(
-            igniter,
-            warning(web_module, "Could not find the web module.")
-          )
-      end
+      patch_web_module(igniter, web_module, &patch_live_view(&1, web_module))
     end
 
     defp patch_live_view(zipper, web_module) do
-      case Function.move_to_def(zipper, :live_view, 0) do
-        :error ->
-          {:warning, warning(web_module, "Could not find `def live_view`.")}
+      with {:ok, body} <- move_to_def_quote_body(zipper, :def, :live_view) do
+        if already_wired?(body) do
+          {:ok, zipper}
+        else
+          case Igniter.Code.Module.move_to_use(body, Phoenix.LiveView) do
+            {:ok, use_call} ->
+              {:ok, Common.add_code(use_call, @wiring_lines, placement: :after)}
 
-        {:ok, body} ->
-          if already_wired?(body) do
-            {:ok, zipper}
-          else
-            patch_quote_block(body, web_module)
-          end
-      end
-    end
-
-    defp patch_quote_block(body, web_module) do
-      case move_to_quote_do(body) do
-        :error ->
-          {:warning, warning(web_module, "Found `def live_view` but no `quote do` block inside.")}
-
-        {:ok, quote_body} ->
-          case Igniter.Code.Module.move_to_use(quote_body, Phoenix.LiveView) do
             :error ->
               {:warning,
                warning(
                  web_module,
                  "Could not locate the `use Phoenix.LiveView` line inside `def live_view`."
                )}
-
-            {:ok, use_call} ->
-              {:ok, Common.add_code(use_call, @wiring_lines, placement: :after)}
           end
+        end
+      else
+        {:error, reason} -> {:warning, warning(web_module, reason)}
       end
     end
 
     # Idempotency check scoped to the `def live_view` body — looks for any
     # reference to `PhoenixPageMeta.LiveView` (the @behaviour or import).
     defp already_wired?(body_zipper) do
-      case Common.move_to(body_zipper, fn z ->
-             case Zipper.node(z) do
-               {:__aliases__, _, parts} ->
-                 Module.concat(parts) == PhoenixPageMeta.LiveView
-
-               _ ->
-                 false
-             end
-           end) do
-        {:ok, _} -> true
-        :error -> false
-      end
-    end
-
-    # Find the `quote do ... end` block inside the function body and move
-    # the zipper to the first expression inside its `do` block.
-    defp move_to_quote_do(zipper) do
-      with {:ok, quote_zipper} <- Function.move_to_function_call(zipper, :quote, 1) do
-        Common.move_to_do_block(quote_zipper)
-      end
+      contains_alias_to?(body_zipper, PhoenixPageMeta.LiveView)
     end
 
     defp warning(web_module, reason) do
@@ -251,6 +214,101 @@ if Code.ensure_loaded?(Igniter) do
 
       #{indent(@wiring_lines, "    ")}
       """
+    end
+
+    # -------------------------------------------------------------------------
+    # Step 4: alias <AppWeb>.PageMeta inside defp html_helpers
+    # -------------------------------------------------------------------------
+
+    defp alias_page_meta_in_html_helpers(igniter, web_module) do
+      page_meta_module = Module.concat(web_module, PageMeta)
+      alias_line = "alias #{inspect(page_meta_module)}"
+
+      patch_web_module(igniter, web_module, fn zipper ->
+        patch_html_helpers(zipper, page_meta_module, alias_line)
+      end)
+    end
+
+    defp patch_html_helpers(zipper, page_meta_module, alias_line) do
+      with {:ok, quote_body} <- move_to_def_quote_body(zipper, :defp, :html_helpers) do
+        if contains_alias_to?(quote_body, page_meta_module) do
+          {:ok, quote_body}
+        else
+          {:ok, Common.add_code(quote_body, alias_line, placement: :after)}
+        end
+      else
+        {:error, reason} ->
+          {:warning, alias_warning(page_meta_module, alias_line, reason)}
+      end
+    end
+
+    defp alias_warning(target, alias_line, reason) do
+      """
+      phoenix_page_meta.install: Could not add `#{alias_line}` (#{reason}). \
+      (target: #{inspect(target)})
+      Please add the alias manually inside `defp html_helpers` so templates and
+      LiveViews can reference `%PageMeta{}` without the prefix.
+      """
+    end
+
+    # -------------------------------------------------------------------------
+    # Shared helpers for web-module patching
+    # -------------------------------------------------------------------------
+
+    # Runs `fun` against the web module's zipper. The web-module-not-found
+    # case becomes a warning rather than an error, so other steps still run.
+    defp patch_web_module(igniter, web_module, fun) do
+      case Igniter.Project.Module.find_and_update_module(igniter, web_module, fun) do
+        {:ok, igniter} ->
+          igniter
+
+        {:error, igniter} ->
+          Igniter.add_warning(
+            igniter,
+            "phoenix_page_meta.install: Could not find web module #{inspect(web_module)}."
+          )
+      end
+    end
+
+    # Navigates from a module zipper into the body of `quote do ... end` inside
+    # the given def/defp. Returns {:ok, quote_body_zipper} | {:error, reason}.
+    defp move_to_def_quote_body(zipper, kind, fun) when kind in [:def, :defp] do
+      move =
+        case kind do
+          :def -> &Function.move_to_def/3
+          :defp -> &Function.move_to_defp/3
+        end
+
+      with {:ok, body} <- wrap_err(move.(zipper, fun, 0), "`#{kind} #{fun}` not found"),
+           {:ok, q} <-
+             wrap_err(
+               Function.move_to_function_call(body, :quote, 1),
+               "no `quote do` block inside `#{kind} #{fun}`"
+             ),
+           {:ok, qb} <-
+             wrap_err(
+               Common.move_to_do_block(q),
+               "no `do` block inside the `quote` of `#{kind} #{fun}`"
+             ) do
+        {:ok, qb}
+      end
+    end
+
+    defp wrap_err({:ok, z}, _), do: {:ok, z}
+    defp wrap_err(:error, reason), do: {:error, reason}
+
+    # Returns true if a top-level `alias <Module>` exists anywhere under the
+    # given zipper (used for idempotency checks against both Step 3 and Step 4).
+    defp contains_alias_to?(zipper, target_module) do
+      result =
+        Common.move_to(zipper, fn z ->
+          case Zipper.node(z) do
+            {:__aliases__, _, parts} -> Module.concat(parts) == target_module
+            _ -> false
+          end
+        end)
+
+      match?({:ok, _}, result)
     end
 
     defp indent(text, prefix) do
