@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.1] - 2026-05-13
+
+### Added
+- `mix phoenix_page_meta.install` — Igniter-powered installer that sets up the
+  PageMeta struct, root.html.heex meta tags, and LiveView callback wiring in one
+  step. Run via `mix igniter.install phoenix_page_meta` or directly with
+  `mix phoenix_page_meta.install`.
+
 ## [0.1.0] - 2026-04-27
 
 ### Added

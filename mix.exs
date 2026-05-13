@@ -1,7 +1,7 @@
 defmodule PhoenixPageMeta.MixProject do
   use Mix.Project
 
-  @version "0.1.0"
+  @version "0.1.1"
   @source_url "https://github.com/exfoundry/phoenix_page_meta"
 
   def project do
@@ -51,6 +51,7 @@ defmodule PhoenixPageMeta.MixProject do
     [
       {:phoenix_live_view, "~> 1.0"},
       {:jason, "~> 1.4"},
+      {:igniter, "~> 0.8", optional: true},
       {:ex_doc, "~> 0.31", only: :dev, runtime: false}
     ]
   end

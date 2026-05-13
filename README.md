@@ -16,6 +16,12 @@ def deps do
 end
 ```
 
+With [Igniter](https://hex.pm/packages/igniter), the installer sets up the PageMeta struct, root.html.heex meta tags, and LiveView wiring automatically:
+
+```sh
+mix igniter.install phoenix_page_meta
+```
+
 ## Setup
 
 One file. No `config.exs` entry.
