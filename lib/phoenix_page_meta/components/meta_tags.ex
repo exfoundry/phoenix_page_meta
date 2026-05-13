@@ -42,7 +42,7 @@ defmodule PhoenixPageMeta.Components.MetaTags do
   the page. `og:locale` and `og:locale:alternate` are rendered when `:locale`
   is set.
   """
-  attr(:page_meta, :any, required: true)
+  attr :page_meta, :any, required: true
 
   def default(assigns) when is_struct(assigns.page_meta) do
     assigns = assign_meta_fields(assigns)

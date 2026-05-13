@@ -34,12 +34,12 @@ defmodule PhoenixPageMeta.Components.Breadcrumbs do
       `%PhoenixPageMeta.Breadcrumb{}`.
     * `:divider` — rendered between items. No argument.
   """
-  attr(:page_meta, :any, required: true)
-  attr(:rest, :global, doc: "Additional HTML attributes (e.g. `class`) applied to the `<nav>`.")
+  attr :page_meta, :any, required: true
+  attr :rest, :global, doc: "Additional HTML attributes (e.g. `class`) applied to the `<nav>`."
 
-  slot(:link, required: true)
-  slot(:current, required: true)
-  slot(:divider, required: true)
+  slot :link, required: true
+  slot :current, required: true
+  slot :divider, required: true
 
   def list(assigns) when is_struct(assigns.page_meta) do
     assigns = assign(assigns, :breadcrumbs, PhoenixPageMeta.Breadcrumb.build(assigns.page_meta))
